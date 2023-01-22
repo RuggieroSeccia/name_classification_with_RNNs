@@ -1,47 +1,55 @@
+from time import time
+
 import torch
-import torch.nn as nn
-import matplotlib.pyplot as plt
+from torch import nn
 
-from nn_utils import RNN, category_from_output
-from utils import ALL_LETTERS, N_LETTERS
-from utils import load_data, letter_to_tensor, line_to_tensor, random_training_example
+from utils import line_to_tensor
 
-category_lines, all_categories = load_data()
-n_categories = len(all_categories)
 
-n_hidden = 128
-rnn = RNN(N_LETTERS, n_hidden, n_categories)
+class RNN(nn.Module):
+    # implement RNN from scratch rather than using nn.RNN
+    def __init__(self, input_size, hidden_size, output_size):
+        super(RNN, self).__init__()
 
-criterion = nn.NLLLoss()
-learning_rate = 0.005
-optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate)
+        self.hidden_size = hidden_size
+        self.i2h = nn.Linear(input_size + hidden_size, hidden_size)
+        self.i2o = nn.Linear(input_size + hidden_size, output_size)
 
-current_loss = 0
-all_losses = []
-plot_steps, print_steps = 1000, 5000
-n_iters = 100000
-for i in range(n_iters):
-    category, line, category_tensor, line_tensor = random_training_example(category_lines, all_categories)
+    def forward(self, input_tensor, hidden_tensor):
+        combined = torch.cat((input_tensor, hidden_tensor), 1)
 
-    output, loss = rnn.train_rnn(line_tensor, category_tensor, criterion, optimizer)
-    current_loss += loss
+        hidden = self.i2h(combined)
+        output = self.i2o(combined)
+        # since we use CrossEntropy we don't need softmax activation function
+        return output, hidden
 
-    if (i + 1) % plot_steps == 0:
-        all_losses.append(current_loss / plot_steps)
-        current_loss = 0
+    def init_hidden(self, batch_size):
+        return torch.zeros(batch_size, self.hidden_size)
 
-    if (i + 1) % print_steps == 0:
-        guess = category_from_output(output, all_categories)
-        correct = "CORRECT" if guess == category else f"WRONG ({category})"
-        print(f"{i + 1} {(i + 1) / n_iters * 100} {loss:.4f} {line} / {guess} {correct}")
+    def train_one_epoch(self, dataloader, tic, limit_time, criterion, optimizer):
+        for _, (seq_batch, labels) in enumerate(dataloader):
+            if time() - tic > limit_time:
+                break
+            hidden = self.init_hidden(seq_batch.size()[0])
+            for i in range(seq_batch.size()[1]):
+                output, hidden = self(seq_batch[:, i, :], hidden)
 
-plt.figure()
-plt.plot(all_losses)
-plt.show()
+            loss = criterion(output, labels)
 
-while True:
-    sentence = input("Input:")
-    if sentence == "quit":
-        break
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-    rnn.predict(sentence, all_categories)
+    def predict(self, sequences, labels, all_categories):
+        with torch.no_grad():
+            hidden = self.init_hidden(sequences.size()[0])
+            for i in range(sequences.size()[1]):
+                output, hidden = self(sequences[:, i, :], hidden)
+
+            _, predictions = torch.max(output, 1)
+
+            print(predictions, labels)
+            for p, l in zip(predictions, labels):
+                print(all_categories[p], all_categories[l])
+            print(f"Percentage correct guesses: {(predictions == labels).float().mean():.3f}")
+        return predictions
