@@ -1,6 +1,9 @@
 # data: https://download.pytorch.org/tutorial/data.zip
 import io
 import os
+from time import time
+
+import numpy as np
 import unicodedata
 import string
 import glob
@@ -56,3 +59,13 @@ def line_to_tensor(line):
     for i, letter in enumerate(line):
         tensor[i][letter_to_index(letter)] = 1
     return tensor
+
+
+def update_plot_info(plot_info, loss):
+    plot_info['current_loss'] += loss
+    plot_info['counter'] += 1
+    if (plot_info['counter']) % plot_info['plot_steps'] == 0:
+        plot_info['all_losses'].append(plot_info['current_loss'] / plot_info['plot_steps'])
+        print(f"Running time: {time() - plot_info['tic']:.2f}, "
+              f"Current loss {plot_info['current_loss'] / plot_info['plot_steps']:.3f}")
+        plot_info['current_loss'] = 0
